@@ -1,0 +1,61 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Shortener</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="navbar">
+    <h2>🔗 URL Shortener</h2>
+    <nav>
+        <a href="#home">Home</a>
+        <a href="#links">My Links</a>
+        <a href="#stats">Stats</a>
+    </nav>
+</header>
+
+<main class="container" id="home">
+    <section class="hero">
+        <h1>Shorten Your URLs</h1>
+        <p>Paste a long URL, get a short link, and share it easily.</p>
+
+        <form id="shortenForm">
+            <input
+                    type="url"
+                    id="originalUrl"
+                    placeholder="Enter your long URL here..."
+                    required
+            >
+            <button type="submit" id="shortenButton">Shorten</button>
+        </form>
+
+        <p class="hint">Example: https://www.google.com</p>
+
+        <p id="message" role="status"></p>
+
+        <section id="result" class="result hidden">
+            <h3>Your link is ready!</h3>
+            <div class="copy-row">
+                <input type="text" id="shortUrl" readonly>
+                <button type="button" id="copyButton">Copy</button>
+            </div>
+        </section>
+    </section>
+
+    <section class="stats-card" id="stats">
+        <h2>Link Statistics</h2>
+        <p>Your link analytics will appear here as we connect the API.</p>
+    </section>
+</main>
+
+<footer>
+    <p>Built with HTML, CSS, JavaScript & Spring Boot</p>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>

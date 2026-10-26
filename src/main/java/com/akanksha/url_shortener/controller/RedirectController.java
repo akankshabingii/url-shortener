@@ -1,3 +1,4 @@
+
 package com.akanksha.url_shortener.controller;
 
 import com.akanksha.url_shortener.service.UrlService;
@@ -17,12 +18,12 @@ public class RedirectController {
         this.service = service;
     }
 
-    // 302 (not 301) so every click hits our server and gets counted.
-    // The target was already validated when the link was created,
-    // so we pass it straight into the Location header.
-    @GetMapping("/{shortCode}")
-    public ResponseEntity<Void> redirect(@PathVariable String shortCode) {
+    @GetMapping("/{shortCode:[a-zA-Z0-9_-]+}")
+    public ResponseEntity<Void> redirect(
+            @PathVariable String shortCode) {
+
         String target = service.resolveAndCount(shortCode);
+
         return ResponseEntity.status(HttpStatus.FOUND)
                 .header(HttpHeaders.LOCATION, target)
                 .build();
