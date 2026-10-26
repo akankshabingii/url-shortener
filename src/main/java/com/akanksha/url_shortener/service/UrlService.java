@@ -5,6 +5,7 @@ import com.akanksha.url_shortener.dto.ShortenResponse;
 import com.akanksha.url_shortener.dto.StatsResponse;
 import com.akanksha.url_shortener.entity.UrlMapping;
 import com.akanksha.url_shortener.exception.AliasTakenException;
+import com.akanksha.url_shortener.exception.BadRequestException;
 import com.akanksha.url_shortener.exception.ExpiredException;
 import com.akanksha.url_shortener.exception.NotFoundException;
 import com.akanksha.url_shortener.repository.UrlMappingRepository;
@@ -13,7 +14,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Locale;
+import java.util.Set;
 
 @Service
 public class UrlService {
@@ -21,29 +28,46 @@ public class UrlService {
     // Offset so generated codes start at ~6 characters instead of "1", "2", ...
     private static final long ID_OFFSET = 10_000_000_000L;
 
+    // Aliases that could clash with app endpoints or look official
+    private static final Set<String> RESERVED_ALIASES =
+            Set.of("api", "error", "actuator", "admin", "health", "static", "swagger-ui", "v3");
+
     private final UrlMappingRepository repository;
     private final String baseUrl;
+    private final String baseHost;
+    private final Clock clock;
 
     public UrlService(UrlMappingRepository repository,
-                      @Value("${app.base-url}") String baseUrl) {
+                      @Value("${app.base-url}") String baseUrl,
+                      Clock clock) {
         this.repository = repository;
         this.baseUrl = baseUrl;
+        this.baseHost = URI.create(baseUrl).getHost();
+        this.clock = clock;
     }
 
     @Transactional
     public ShortenResponse shorten(ShortenRequest request) {
+        validateTargetUrl(request.url());
+
+        Instant now = clock.instant();
+
         UrlMapping mapping = new UrlMapping();
         mapping.setOriginalUrl(request.url());
-        mapping.setCreatedAt(LocalDateTime.now());
+        mapping.setCreatedAt(now);
         if (request.expiresInDays() != null) {
-            mapping.setExpiresAt(LocalDateTime.now().plusDays(request.expiresInDays()));
+            mapping.setExpiresAt(now.plus(request.expiresInDays(), ChronoUnit.DAYS));
         }
 
         if (request.customAlias() != null && !request.customAlias().isBlank()) {
-            if (repository.existsByShortCode(request.customAlias())) {
+            String alias = request.customAlias();
+            if (RESERVED_ALIASES.contains(alias.toLowerCase(Locale.ROOT))) {
+                throw new BadRequestException("That alias is reserved");
+            }
+            if (repository.existsByShortCode(alias)) {
                 throw new AliasTakenException("Alias already in use");
             }
-            mapping.setShortCode(request.customAlias());
+            mapping.setShortCode(alias);
             repository.save(mapping);
         } else {
             // 1) insert -> MySQL gives us a unique auto-increment id
@@ -64,7 +88,7 @@ public class UrlService {
     public String resolveAndCount(String shortCode) {
         UrlMapping mapping = repository.findByShortCode(shortCode)
                 .orElseThrow(() -> new NotFoundException("Short URL not found"));
-        if (mapping.isExpired()) {
+        if (mapping.isExpired(clock.instant())) {
             throw new ExpiredException("This short URL has expired");
         }
         repository.incrementClickCount(mapping.getId());
@@ -77,5 +101,24 @@ public class UrlService {
                 .orElseThrow(() -> new NotFoundException("Short URL not found"));
         return new StatsResponse(m.getShortCode(), m.getOriginalUrl(),
                 m.getClickCount(), m.getCreatedAt(), m.getExpiresAt());
+    }
+
+    // The regex in ShortenRequest only checks the start of the string.
+    // Here we make sure it is a real, parseable URL with a host,
+    // and that it doesn't point back at this service (redirect loop).
+    private void validateTargetUrl(String url) {
+        URI uri;
+        try {
+            uri = new URI(url);
+        } catch (URISyntaxException e) {
+            throw new BadRequestException("url is not a valid URL (check for spaces or illegal characters)");
+        }
+        String host = uri.getHost();
+        if (host == null || host.isBlank()) {
+            throw new BadRequestException("url must contain a valid host");
+        }
+        if (host.equalsIgnoreCase(baseHost)) {
+            throw new BadRequestException("url cannot point to this service");
+        }
     }
 }

@@ -1,7 +1,7 @@
 package com.akanksha.url_shortener.entity;
 
 import jakarta.persistence.*;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "url_mapping")
@@ -14,14 +14,17 @@ public class UrlMapping {
     @Column(nullable = false, length = 2048)
     private String originalUrl;
 
-    // unique => MySQL builds an index, so lookups by code are fast
-    @Column(unique = true, length = 30)
+    // unique => MySQL builds an index, so lookups by code are fast.
+    // utf8mb4_bin makes the column case-sensitive (this is the Step 1 fix),
+    // so "aB" and "Ab" are treated as different codes.
+    @Column(unique = true, length = 30,
+            columnDefinition = "varchar(30) character set utf8mb4 collate utf8mb4_bin")
     private String shortCode;
 
     @Column(nullable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
-    private LocalDateTime expiresAt;
+    private Instant expiresAt;
 
     @Column(nullable = false)
     private long clickCount = 0;
@@ -31,14 +34,13 @@ public class UrlMapping {
     public void setOriginalUrl(String originalUrl) { this.originalUrl = originalUrl; }
     public String getShortCode() { return shortCode; }
     public void setShortCode(String shortCode) { this.shortCode = shortCode; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
-    public LocalDateTime getExpiresAt() { return expiresAt; }
-    public void setExpiresAt(LocalDateTime expiresAt) { this.expiresAt = expiresAt; }
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+    public Instant getExpiresAt() { return expiresAt; }
+    public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }
     public long getClickCount() { return clickCount; }
-    public void setClickCount(long clickCount) { this.clickCount = clickCount; }
 
-    public boolean isExpired() {
-        return expiresAt != null && LocalDateTime.now().isAfter(expiresAt);
+    public boolean isExpired(Instant now) {
+        return expiresAt != null && now.isAfter(expiresAt);
     }
 }

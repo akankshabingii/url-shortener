@@ -8,8 +8,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.URI;
-
 @RestController
 public class RedirectController {
 
@@ -19,12 +17,14 @@ public class RedirectController {
         this.service = service;
     }
 
-    // 302 (not 301) so every click hits our server and gets counted
+    // 302 (not 301) so every click hits our server and gets counted.
+    // The target was already validated when the link was created,
+    // so we pass it straight into the Location header.
     @GetMapping("/{shortCode}")
     public ResponseEntity<Void> redirect(@PathVariable String shortCode) {
         String target = service.resolveAndCount(shortCode);
         return ResponseEntity.status(HttpStatus.FOUND)
-                .header(HttpHeaders.LOCATION, URI.create(target).toString())
+                .header(HttpHeaders.LOCATION, target)
                 .build();
     }
 }

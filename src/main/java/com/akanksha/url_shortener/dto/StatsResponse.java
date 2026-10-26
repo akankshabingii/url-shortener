@@ -1,11 +1,11 @@
 package com.akanksha.url_shortener.dto;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public record StatsResponse(
         String shortCode,
         String originalUrl,
         long clickCount,
-        LocalDateTime createdAt,
-        LocalDateTime expiresAt
+        Instant createdAt,
+        Instant expiresAt
 ) {}
