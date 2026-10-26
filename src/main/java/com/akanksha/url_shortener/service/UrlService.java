@@ -48,7 +48,7 @@ public class UrlService {
         this.repository = repository;
         this.linkLookup = linkLookup;
         this.clickCounter = clickCounter;
-        this.baseUrl = baseUrl;
+        this.baseUrl = baseUrl.trim().replaceAll("/+$", "");
         this.baseHost = URI.create(baseUrl).getHost();
         this.clock = clock;
     }

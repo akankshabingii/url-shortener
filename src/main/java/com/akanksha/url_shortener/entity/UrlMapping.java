@@ -17,7 +17,7 @@ public class UrlMapping {
     // unique => MySQL builds an index, so lookups by code are fast.
     // utf8mb4_bin makes the column case-sensitive (this is the Step 1 fix),
     // so "aB" and "Ab" are treated as different codes.
-    @Column(unique = true, length = 30,
+    @Column(nullable = false,unique=true, length = 30,
             columnDefinition = "varchar(30) character set utf8mb4 collate utf8mb4_bin")
     private String shortCode;
 
