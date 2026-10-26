@@ -34,14 +34,20 @@ public class UrlService {
             Set.of("api", "error", "actuator", "admin", "health", "static", "swagger-ui", "v3");
 
     private final UrlMappingRepository repository;
+    private final LinkLookup linkLookup;
+    private final ClickCounter clickCounter;
     private final String baseUrl;
     private final String baseHost;
     private final Clock clock;
 
     public UrlService(UrlMappingRepository repository,
+                      LinkLookup linkLookup,
+                      ClickCounter clickCounter,
                       @Value("${app.base-url}") String baseUrl,
                       Clock clock) {
         this.repository = repository;
+        this.linkLookup = linkLookup;
+        this.clickCounter = clickCounter;
         this.baseUrl = baseUrl;
         this.baseHost = URI.create(baseUrl).getHost();
         this.clock = clock;
@@ -84,23 +90,24 @@ public class UrlService {
                 mapping.getExpiresAt());
     }
 
-    @Transactional
+    // Hot path: no transaction, usually no DB access at all.
     public String resolveAndCount(String shortCode) {
-        UrlMapping mapping = repository.findByShortCode(shortCode)
-                .orElseThrow(() -> new NotFoundException("Short URL not found"));
-        if (mapping.isExpired(clock.instant())) {
+        LinkTarget target = linkLookup.find(shortCode);          // cached
+        if (target.isExpired(clock.instant())) {                 // checked every time
             throw new ExpiredException("This short URL has expired");
         }
-        repository.incrementClickCount(mapping.getId());
-        return mapping.getOriginalUrl();
+        clickCounter.increment(target.id());                     // in memory, flushed in batches
+        return target.originalUrl();
     }
 
     @Transactional(readOnly = true)
     public StatsResponse stats(String shortCode) {
         UrlMapping m = repository.findByShortCode(shortCode)
                 .orElseThrow(() -> new NotFoundException("Short URL not found"));
+        // saved clicks + clicks still waiting to be flushed
+        long clicks = m.getClickCount() + clickCounter.pending(m.getId());
         return new StatsResponse(m.getShortCode(), m.getOriginalUrl(),
-                m.getClickCount(), m.getCreatedAt(), m.getExpiresAt());
+                clicks, m.getCreatedAt(), m.getExpiresAt());
     }
 
     // Random code; if it already exists (very rare), try again.
@@ -114,9 +121,6 @@ public class UrlService {
         throw new IllegalStateException("Could not generate a unique short code");
     }
 
-    // The regex in ShortenRequest only checks the start of the string.
-    // Here we make sure it is a real, parseable URL with a host,
-    // and that it doesn't point back at this service (redirect loop).
     private void validateTargetUrl(String url) {
         URI uri;
         try {

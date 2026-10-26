@@ -19,6 +19,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -26,15 +27,17 @@ class UrlServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-10-26T00:00:00Z");
 
-    @Mock
-    private UrlMappingRepository repository;
+    @Mock private UrlMappingRepository repository;
+    @Mock private LinkLookup linkLookup;
+    @Mock private ClickCounter clickCounter;
 
     private UrlService service;
 
     @BeforeEach
     void setUp() {
         Clock fixed = Clock.fixed(NOW, ZoneOffset.UTC);   // time never changes in tests
-        service = new UrlService(repository, "http://localhost:8080", fixed);
+        service = new UrlService(repository, linkLookup, clickCounter,
+                "http://localhost:8080", fixed);
     }
 
     @Test
@@ -84,34 +87,44 @@ class UrlServiceTest {
 
     @Test
     void resolve_unknownCode_throwsNotFound() {
-        when(repository.findByShortCode("nope")).thenReturn(Optional.empty());
+        when(linkLookup.find("nope")).thenThrow(new NotFoundException("Short URL not found"));
         assertThrows(NotFoundException.class, () -> service.resolveAndCount("nope"));
     }
 
     @Test
     void resolve_expiredLink_throwsAndDoesNotCountClick() {
-        UrlMapping m = mapping(5L, "https://example.com", NOW.minusSeconds(60));
-        when(repository.findByShortCode("old")).thenReturn(Optional.of(m));
+        when(linkLookup.find("old"))
+                .thenReturn(new LinkTarget(5L, "https://example.com", NOW.minusSeconds(60)));
 
         assertThrows(ExpiredException.class, () -> service.resolveAndCount("old"));
-        verify(repository, never()).incrementClickCount(any());
+        verify(clickCounter, never()).increment(anyLong());
     }
 
     @Test
     void resolve_validLink_countsClickAndReturnsTarget() {
-        UrlMapping m = mapping(5L, "https://example.com", NOW.plusSeconds(60));
-        when(repository.findByShortCode("ok")).thenReturn(Optional.of(m));
+        when(linkLookup.find("ok"))
+                .thenReturn(new LinkTarget(5L, "https://example.com", NOW.plusSeconds(60)));
 
         assertEquals("https://example.com", service.resolveAndCount("ok"));
-        verify(repository).incrementClickCount(5L);
+        verify(clickCounter).increment(5L);
     }
 
-    private UrlMapping mapping(Long id, String url, Instant expiresAt) {
+    @Test
+    void stats_includesClicksNotYetFlushed() {
+        UrlMapping m = mapping(5L, 10L);
+        when(repository.findByShortCode("ok")).thenReturn(Optional.of(m));
+        when(clickCounter.pending(5L)).thenReturn(3L);
+
+        assertEquals(13L, service.stats("ok").clickCount());
+    }
+
+    private UrlMapping mapping(Long id, long clicks) {
         UrlMapping m = new UrlMapping();
-        ReflectionTestUtils.setField(m, "id", id);   // entity has no setId
-        m.setOriginalUrl(url);
+        ReflectionTestUtils.setField(m, "id", id);            // entity has no setId
+        ReflectionTestUtils.setField(m, "clickCount", clicks);
+        m.setShortCode("ok");
+        m.setOriginalUrl("https://example.com");
         m.setCreatedAt(NOW);
-        m.setExpiresAt(expiresAt);
         return m;
     }
 }
