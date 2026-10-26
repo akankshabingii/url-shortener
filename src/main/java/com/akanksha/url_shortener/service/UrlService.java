@@ -25,8 +25,9 @@ import java.util.Set;
 @Service
 public class UrlService {
 
-    // Offset so generated codes start at ~6 characters instead of "1", "2", ...
-    private static final long ID_OFFSET = 10_000_000_000L;
+    // 62^7 = ~3.5 trillion possible codes
+    private static final int CODE_LENGTH = 7;
+    private static final int MAX_ATTEMPTS = 5;
 
     // Aliases that could clash with app endpoints or look official
     private static final Set<String> RESERVED_ALIASES =
@@ -59,6 +60,7 @@ public class UrlService {
             mapping.setExpiresAt(now.plus(request.expiresInDays(), ChronoUnit.DAYS));
         }
 
+        String code;
         if (request.customAlias() != null && !request.customAlias().isBlank()) {
             String alias = request.customAlias();
             if (RESERVED_ALIASES.contains(alias.toLowerCase(Locale.ROOT))) {
@@ -67,15 +69,13 @@ public class UrlService {
             if (repository.existsByShortCode(alias)) {
                 throw new AliasTakenException("Alias already in use");
             }
-            mapping.setShortCode(alias);
-            repository.save(mapping);
+            code = alias;
         } else {
-            // 1) insert -> MySQL gives us a unique auto-increment id
-            repository.save(mapping);
-            // 2) short code = Base62(id): unique by construction, no collision checks
-            mapping.setShortCode(Base62.encode(mapping.getId() + ID_OFFSET));
-            // entity is managed, so this update is flushed on commit
+            code = generateUniqueCode();
         }
+
+        mapping.setShortCode(code);
+        repository.save(mapping);   // one INSERT; the unique index is the final safety net
 
         return new ShortenResponse(
                 mapping.getShortCode(),
@@ -101,6 +101,17 @@ public class UrlService {
                 .orElseThrow(() -> new NotFoundException("Short URL not found"));
         return new StatsResponse(m.getShortCode(), m.getOriginalUrl(),
                 m.getClickCount(), m.getCreatedAt(), m.getExpiresAt());
+    }
+
+    // Random code; if it already exists (very rare), try again.
+    private String generateUniqueCode() {
+        for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+            String candidate = Base62.random(CODE_LENGTH);
+            if (!repository.existsByShortCode(candidate)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("Could not generate a unique short code");
     }
 
     // The regex in ShortenRequest only checks the start of the string.
