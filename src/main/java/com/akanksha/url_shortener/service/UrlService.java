@@ -49,7 +49,7 @@ public class UrlService {
         this.linkLookup = linkLookup;
         this.clickCounter = clickCounter;
         this.baseUrl = baseUrl.trim().replaceAll("/+$", "");
-        this.baseHost = URI.create(baseUrl).getHost();
+        this.baseHost = URI.create(this.baseUrl).getHost();
         this.clock = clock;
     }
 
